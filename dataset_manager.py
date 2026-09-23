@@ -24,7 +24,7 @@ class DatasetManager:
         else:
             df = self._load_dataset()
 
-        return df, self.dataset_checkpoint
+        return df
 
 
     def _save_dataset_checkpoint(self) -> None:
@@ -49,12 +49,33 @@ class DatasetManager:
 
     
     def _build_dataset(self, *, df: pd.DataFrame) -> pd.DataFrame:
-        # Add dataset transformations here
+        print('Initial shape:', df.shape)
+        # def get_deck(cabin):
+        #     if type(cabin) == str:
+        #         parts = cabin.split()
+        #         if len(parts) == 1:
+        #             return cabin[0]
+        #         for part in parts:
+        #             if len(part) > 1:
+        #                 return part[0]
+        #     return 'Unknown'
+        # df['Deck'] = df.Cabin.apply(get_deck)
+        # df['Surname'] = df.Name.apply(lambda x: x[:x.find(',')])
+        # df['Title'] = df.Name.apply(lambda x: x[x.find(',')+2:x.find('.')])
 
         if self.config.general.is_train:
             # Add dataset transformations here
+            drop_columns = ['PassengerId', 'Name', 'Ticket', 'Cabin']
             self.dataset_checkpoint['dtypes'] = dict(df.dtypes)
+            self.dataset_checkpoint['dropcols'] = drop_columns
         else:
             # Add dataset transformations here
-            pass
+            drop_columns = self.dataset_checkpoint['dropcols']
+
+        df = df.drop(drop_columns, axis=1)
+        
+        print('Shape after build dataset:', df.shape)
+        print('There are', df.isna().sum().sum(), 'missing values.')
+        print('There are', (df.nunique() == 2).sum(), 'binary columns.')
+
         return df

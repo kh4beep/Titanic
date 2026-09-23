@@ -5,10 +5,11 @@ import pandas as pd
 import numpy as np
 
 from tqdm import tqdm
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import train_test_split, StratifiedKFold
 
 from data_transformer import DataTransformer
 from model_trainer import ModelTrainer
+from utils import get_metric
 
 class ModelManager:
     def __init__(self, *, config):
@@ -22,9 +23,18 @@ class ModelManager:
             self._load_models()
 
 
-    def fit(self, df: pd.DataFrame, dataset_checkpoint: dict) -> dict:
-        X = df.iloc[:, :-1]
-        y = df.iloc[:, -1]
+    def fit(self, df: pd.DataFrame) -> dict:
+        X = df.drop('Survived', axis=1)
+        y = df.Survived
+        if self.config.general.is_hold_test:
+            X, X_test, y, y_test = train_test_split(
+                X,
+                y, 
+                test_size=self.config.general.test_size, 
+                random_state=self.config.general.seed,
+                stratify=y
+            )
+
         artifacts = {}
         splitter = StratifiedKFold(
             n_splits=self.config.general.n_splits, 
@@ -37,7 +47,7 @@ class ModelManager:
             if not is_train_model:
                 continue
 
-            model_checkpoint_path = os.path.join(self.config.path_to_models, model_name)
+            model_checkpoint_path = os.path.join(self.config.paths.path_to_models, model_name)
             os.makedirs(model_checkpoint_path, exist_ok=True)
 
             self.models[model_name] = {}
@@ -57,11 +67,13 @@ class ModelManager:
                     model_name=model_name
                 )
                 if self.config.general.is_refit_datatransformer:
-                    X_train = data_transformer.fit_transform(df=X.iloc[train_index])
+                    X_train = data_transformer.fit_transform(X=X.iloc[train_index])
                 else:
                     data_transformer.load_state()
-                    X_train = data_transformer.transform(df=X.iloc[train_index])
-                X_val = data_transformer.transform(df=X.iloc[val_index])
+                    X_train = data_transformer.transform(X=X.iloc[train_index])
+                X_val = data_transformer.transform(X=X.iloc[val_index])
+                y_train = y.iloc[train_index]
+                y_val = y.iloc[val_index]
 
                 model_trainer_path = os.path.join(fold_checkpoint_path, 'model.pickle')
                 model_trainer = ModelTrainer(
@@ -71,11 +83,12 @@ class ModelManager:
                 )
                 artifacts_fold = model_trainer.fit(
                     X_train=X_train,
-                    y_train=y.iloc[train_index],
+                    y_train=y_train,
                     X_val=X_val,
-                    y_val=y.iloc[val_index],
-                    cat_cols=dataset_checkpoint.get('cat_cols'),
+                    y_val=y_val,
                 )
+                val_predictions = model_trainer.predict(X=X_val)
+                val_metric = get_metric(y_true=y_val, y_pred=val_predictions)
 
                 self.models[model_name][f'fold_{i}'] = {
                     'data_transformer': data_transformer, 
@@ -86,27 +99,40 @@ class ModelManager:
                     'model_trainer_path': model_trainer_path
                 }
 
-                artifacts[model_name]['fold_metrics'].append(artifacts_fold['metric'])
-                oof[val_index] = artifacts_fold['predictions']
+                artifacts[model_name]['fold_metrics'].append(val_metric)
+                oof[val_index] = val_predictions
 
                 if self.config.general.is_save_models:
                     self._save_models(data_transformer=data_transformer, model_trainer=model_trainer)
                     self._save_state()
 
+            artifacts[model_name]['mean_metric'] = np.mean(artifacts[model_name]['fold_metrics'])
             artifacts[model_name]['oof_predictions'] = oof
 
+        if self.config.general.is_eval_test:
+            test_predictions, ensemble_preds = self.predict(X=X_test)
+            artifacts['test_metrics'] = {}
+            for model_name, preds in test_predictions.items():
+                artifacts['test_metrics'][model_name] = get_metric(y_true=y_test, y_pred=preds)
+            artifacts['test_metrics']['ensemble'] = get_metric(y_true=y_test, y_pred=ensemble_preds)
+            artifacts['test_ensemble_predictions'] = ensemble_preds
         return artifacts
 
 
-    def predict(self, *, X: pd.DataFrame, dataset_checkpoint: dict) -> dict:
+    def predict(self, *, X: pd.DataFrame) -> tuple[dict, np.array]:
         predictions = {}
         for model_name, folds in self.models.items():
             predictions[model_name] = np.zeros(len(X))
             for fold_name, models in folds.items():
-                X_transformed = models['data_transformer'].transform(df=X)
+                X_transformed = models['data_transformer'].transform(X=X)
                 preds = np.asarray(models['model_trainer'].predict(X=X_transformed))
                 predictions[model_name] += preds / len(folds)
-        return predictions
+            predictions[model_name] = np.clip(predictions[model_name], 0, 1)
+
+        ensemble_preds = np.zeros(len(X))
+        for model_name, weight in self.config.models.to_inference.items():
+            ensemble_preds += predictions[model_name] * weight
+        return predictions, np.round(ensemble_preds)
 
 
     def _save_state(self) -> None:

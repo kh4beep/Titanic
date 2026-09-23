@@ -2,6 +2,10 @@ import pickle
 
 import pandas as pd
 
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+
 
 class ModelTrainer:
     def __init__(self, *, config, path: str, model_name: str):
@@ -16,11 +20,19 @@ class ModelTrainer:
         *,
         X_train: pd.DataFrame,
         y_train: pd.Series,
-        X_val: pd.DataFrame, 
+        X_val: pd.DataFrame,
         y_val: pd.Series,
-        cat_cols: list[str] | None
+        cat_cols: list[str] | None = None
     ) -> dict:
-        return {}
+        artifacts = {}
+        if self.model_name == 'LogisticRegression':
+            self.model = LogisticRegression(random_state=self.config.general.seed)
+        if self.model_name == 'DecisionTreeClassifier':
+            self.model = DecisionTreeClassifier(random_state=self.config.general.seed)
+        if self.model_name == 'RandomForestClassifier':
+            self.model = RandomForestClassifier(random_state=self.config.general.seed)
+        self.model.fit(X_train, y_train)
+        return artifacts
 
 
     def predict(
