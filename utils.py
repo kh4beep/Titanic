@@ -41,5 +41,17 @@ def setup_logger(*, path: str) -> logging.Logger:
     return logger
 
 
-def get_metric(*, y_true: pd.Series, y_pred: pd.Series) -> float:
-    return f1_score(y_true, np.round(y_pred))
+def get_metric(*, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(f1_score(y_true, np.round(y_pred)))
+
+
+def create_submission(*, index: np.ndarray, predictions: np.ndarray, path: str) -> dict:
+    artifacts = {}
+    submission = pd.DataFrame({
+        'PassengerId': index,
+        'Survived': predictions
+    })
+    submission.to_csv(path, index=False)
+    artifacts['shape'] = submission.shape
+    artifacts['value_counts'] = submission['Survived'].value_counts()
+    return artifacts

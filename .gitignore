@@ -2,3 +2,5 @@
 .vscode
 __pycache__
 checkpoints
+pyrightconfig.json
+catboost_info

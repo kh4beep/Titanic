@@ -12,15 +12,13 @@ class DatasetManager:
             self._load_dataset_checkpoint()
 
 
-    def get_dataset(self, *, df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    def get_dataset(self, *, df: pd.DataFrame) -> pd.DataFrame:
         if not self.config.general.is_train:
             df = self._build_dataset(df=df)
-
         elif self.config.general.is_rebuild_dataset:
             df = self._build_dataset(df=df)
             self._save_dataset(df=df)
             self._save_dataset_checkpoint()
-
         else:
             df = self._load_dataset()
 
@@ -65,7 +63,7 @@ class DatasetManager:
 
         if self.config.general.is_train:
             # Add dataset transformations here
-            drop_columns = ['PassengerId', 'Name', 'Ticket', 'Cabin']
+            drop_columns = ['Name', 'Ticket', 'Cabin']
             self.dataset_checkpoint['dtypes'] = dict(df.dtypes)
             self.dataset_checkpoint['dropcols'] = drop_columns
         else:

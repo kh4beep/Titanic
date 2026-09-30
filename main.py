@@ -10,8 +10,10 @@ from runner import run
 def main(*, config):
     set_seed(seed=config.general.seed)
 
-    os.makedirs(config.paths.path_to_checkpoints, exist_ok=True)
-    os.makedirs(config.paths.path_to_models, exist_ok=True)
+    if config.general.is_train:
+        os.makedirs(config.paths.path_to_checkpoints, exist_ok=True)
+        os.makedirs(config.paths.path_to_models, exist_ok=True)
+        shutil.copyfile('./config.py', config.paths.path_to_config)
 
     logger = setup_logger(path=config.paths.path_to_logs)
 
@@ -20,10 +22,8 @@ def main(*, config):
     start_time = time.time()
 
     artifacts = run(config=config)
-    logger.info(artifacts)
-
-    shutil.copyfile('./config.py', config.paths.path_to_config)
     
+    logger.info(artifacts)    
     logger.info(f'Total Time: {int(time.time() - start_time)} s')
 
 

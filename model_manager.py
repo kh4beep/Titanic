@@ -26,6 +26,7 @@ class ModelManager:
     def fit(self, df: pd.DataFrame) -> dict:
         X = df.drop('Survived', axis=1)
         y = df.Survived
+        X_test, y_test = None, None
         if self.config.general.is_hold_test:
             X, X_test, y, y_test = train_test_split(
                 X,
@@ -66,14 +67,16 @@ class ModelManager:
                     path=data_transformer_path, 
                     model_name=model_name
                 )
+
                 if self.config.general.is_refit_datatransformer:
                     X_train = data_transformer.fit_transform(X=X.iloc[train_index])
                 else:
                     data_transformer.load_state()
                     X_train = data_transformer.transform(X=X.iloc[train_index])
+
                 X_val = data_transformer.transform(X=X.iloc[val_index])
-                y_train = y.iloc[train_index]
-                y_val = y.iloc[val_index]
+                y_train = np.asarray(y.iloc[train_index])
+                y_val = np.asarray(y.iloc[val_index])
 
                 model_trainer_path = os.path.join(fold_checkpoint_path, 'model.pickle')
                 model_trainer = ModelTrainer(
@@ -81,6 +84,7 @@ class ModelManager:
                     path=model_trainer_path, 
                     model_name=model_name
                 )
+
                 artifacts_fold = model_trainer.fit(
                     X_train=X_train,
                     y_train=y_train,
@@ -110,29 +114,32 @@ class ModelManager:
             artifacts[model_name]['oof_predictions'] = oof
 
         if self.config.general.is_eval_test:
-            test_predictions, ensemble_preds = self.predict(X=X_test)
+            if X_test is None or y_test is None:
+                raise Exception('X_test or y_test is not defined')
+            test_predictions, predictions = self.predict(X=X_test)
             artifacts['test_metrics'] = {}
             for model_name, preds in test_predictions.items():
                 artifacts['test_metrics'][model_name] = get_metric(y_true=y_test, y_pred=preds)
-            artifacts['test_metrics']['ensemble'] = get_metric(y_true=y_test, y_pred=ensemble_preds)
-            artifacts['test_ensemble_predictions'] = ensemble_preds
+            artifacts['test_metrics']['ensemble'] = get_metric(y_true=y_test, y_pred=predictions)
+            artifacts['test_predictions'] = predictions
         return artifacts
 
 
-    def predict(self, *, X: pd.DataFrame) -> tuple[dict, np.array]:
-        predictions = {}
+    def predict(self, *, X: pd.DataFrame) -> tuple[dict, np.ndarray] | np.ndarray:
+        all_predictions = {}
         for model_name, folds in self.models.items():
-            predictions[model_name] = np.zeros(len(X))
+            all_predictions[model_name] = np.zeros(len(X))
             for fold_name, models in folds.items():
                 X_transformed = models['data_transformer'].transform(X=X)
                 preds = np.asarray(models['model_trainer'].predict(X=X_transformed))
-                predictions[model_name] += preds / len(folds)
-            predictions[model_name] = np.clip(predictions[model_name], 0, 1)
+                all_predictions[model_name] += preds / len(folds)
+            all_predictions[model_name] = np.clip(all_predictions[model_name], 0, 1)
 
-        ensemble_preds = np.zeros(len(X))
+        predictions = np.zeros(len(X))
         for model_name, weight in self.config.models.to_inference.items():
-            ensemble_preds += predictions[model_name] * weight
-        return predictions, np.round(ensemble_preds)
+            predictions += all_predictions[model_name] * weight
+        predictions = np.round(predictions).astype(int)
+        return all_predictions, predictions
 
 
     def _save_state(self) -> None:
@@ -153,7 +160,7 @@ class ModelManager:
     def _load_models(self) -> None:
         self.models = {}
         for model_name, folds in self.state_checkpoint['models'].items():
-            if model_name not in self.config.models.to_inference:
+            if model_name not in self.config.models.to_inference.keys():
                 continue
 
             self.models[model_name] = {}

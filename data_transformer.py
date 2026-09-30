@@ -1,6 +1,7 @@
 import os
 import pickle
 
+import numpy as np
 import pandas as pd
 
 from sklearn.compose import ColumnTransformer
@@ -21,11 +22,10 @@ class DataTransformer:
     def fit(self, *, X: pd.DataFrame, y: pd.Series | None = None) -> None:
         self.column_transformer = ColumnTransformer(
             transformers=[
-                ('age', Pipeline([
+                ('age_fare', Pipeline([
                     ('imputer', SimpleImputer(strategy='mean')),
                     ('scaler', StandardScaler())
-                ]), ['Age']),
-                ('num_standard', StandardScaler(), ['Fare']),
+                ]), ['Age', 'Fare']),
                 ('embarked', Pipeline([
                     ('imputer', SimpleImputer(strategy='most_frequent')),
                     ('encoder', OneHotEncoder(drop='first'))
@@ -37,12 +37,13 @@ class DataTransformer:
         self.column_transformer.fit(X)
 
 
-    def transform(self, *, X: pd.DataFrame) -> pd.DataFrame:
-        X_transformed = self.column_transformer.transform(X)
-        return X_transformed
+    def transform(self, *, X: pd.DataFrame) -> np.ndarray:
+        if self.column_transformer is None:
+            raise Exception('Column_transformer is not defined')
+        return np.array(self.column_transformer.transform(X))
 
 
-    def fit_transform(self, *, X: pd.DataFrame, y: pd.Series | None = None) -> pd.DataFrame:
+    def fit_transform(self, *, X: pd.DataFrame, y: pd.Series | None = None) -> np.ndarray:
         self.fit(X=X, y=y)
         return self.transform(X=X)
 
