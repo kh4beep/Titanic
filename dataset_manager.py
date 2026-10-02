@@ -36,11 +36,11 @@ class DatasetManager:
 
 
     def _save_dataset(self, *, df: pd.DataFrame) -> None:
-        df.to_csv(self.config.paths.path_to_modified_dataset, index=False)
+        df.to_csv(self.config.paths.path_to_modified_dataset, index=True)
 
 
     def _load_dataset(self) -> pd.DataFrame:
-        df = pd.read_csv(self.config.paths.path_to_modified_dataset)
+        df = pd.read_csv(self.config.paths.path_to_modified_dataset, index_col='PassengerId')
         # Restore dataset state here
         df = df.astype(self.dataset_checkpoint['dtypes'])
         return df    
@@ -64,13 +64,13 @@ class DatasetManager:
         if self.config.general.is_train:
             # Add dataset transformations here
             drop_columns = ['Name', 'Ticket', 'Cabin']
-            self.dataset_checkpoint['dtypes'] = dict(df.dtypes)
             self.dataset_checkpoint['dropcols'] = drop_columns
         else:
             # Add dataset transformations here
             drop_columns = self.dataset_checkpoint['dropcols']
 
         df = df.drop(drop_columns, axis=1)
+        self.dataset_checkpoint['dtypes'] = dict(df.dtypes)
         
         print('Shape after build dataset:', df.shape)
         print('There are', df.isna().sum().sum(), 'missing values.')

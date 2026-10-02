@@ -4,8 +4,9 @@ from omegaconf import OmegaConf
 
 config = {
     'general': {
-        'experiment_name': 'baseline',
+        'experiment_name': 'final_baseline',
         'seed': 42,
+        'predict_threshold': 0.5,
         'is_train': True,
         'is_rebuild_dataset': True,
         'is_refit_datatransformer': True,
@@ -29,8 +30,43 @@ config = {
         'path_to_submission': os.path.join('${paths.path_to_checkpoints}', 'submission.csv')
     },
     'models': {
-        'params': {},
+        'params': {
+            'LinearSVC': 
+            {
+                'is_calibration': True,
+                'calibration_kwargs': {'method': 'sigmoid', 'cv': 3},
+                'kwargs': {'random_state': '${general.seed}'}
+            },
+            'LogisticRegression': 
+            {
+                'is_calibration': False,
+                'kwargs': {'random_state': '${general.seed}'}
+            },
+            'DecisionTreeClassifier': 
+            {
+                'is_calibration': True,
+                'calibration_kwargs': {'method': 'sigmoid', 'cv': 3},
+                'kwargs': {'random_state': '${general.seed}'}
+            },
+            'RandomForestClassifier': 
+            {
+                'is_calibration': True,
+                'calibration_kwargs': {'method': 'sigmoid', 'cv': 3},
+                'kwargs': {'random_state': '${general.seed}'}
+            },
+            'CatBoostClassifier': 
+            {
+                'is_calibration': False,
+                'kwargs': {'random_state': '${general.seed}'}
+            },
+            'DLM': 
+            {
+                'is_calibration': False,
+                'kwargs': {'random_state': '${general.seed}'}
+            },
+        },
         'to_train': {
+            'LinearSVC': True,
             'LogisticRegression': True,
             'DecisionTreeClassifier': True,
             'RandomForestClassifier': True,
@@ -38,11 +74,12 @@ config = {
             'DLM': True
         },
         'to_inference': {
-            'LogisticRegression': 0.2,
-            'DecisionTreeClassifier': 0.2,
-            'RandomForestClassifier': 0.2,
-            'CatBoostClassifier': 0.2,
-            'DLM': 0.2,
+            'LinearSVC': 1,
+            'LogisticRegression': 1,
+            'DecisionTreeClassifier': 1,
+            'RandomForestClassifier': 2,
+            'CatBoostClassifier': 2,
+            'DLM': 2,
         },
     }
 }

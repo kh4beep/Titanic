@@ -18,9 +18,8 @@ def run(*, config) -> dict:
     if config.general.is_train:
         return model_manager.fit(df=df)
     else:
-        _, predictions = model_manager.predict(X=df)
         return create_submission(
             index=np.array(df.index),
-            predictions=predictions,
+            predictions=model_manager.predict(X=df),
             path=config.paths.path_to_submission
         )

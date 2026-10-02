@@ -16,7 +16,8 @@ class DLM(nn.Module):
         epochs: int = 25, 
         batch_size: int = 32, 
         learning_rate: float = 0.001,
-        device: str = 'cpu'
+        device: str = 'cpu',
+        random_state: int = 42,
     ):
         super(DLM, self).__init__()
         self.output_size = output_size
@@ -24,6 +25,7 @@ class DLM(nn.Module):
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.device = device
+        self.random_state = random_state
         self.mlp = None
         self.input_size = None
 
@@ -48,6 +50,7 @@ class DLM(nn.Module):
 
 
     def fit(self, *, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray):
+        rng = np.random.default_rng(self.random_state)  
         self.input_size = X_train.shape[1]
         if self.mlp is None:
             self._build_model()
@@ -68,7 +71,7 @@ class DLM(nn.Module):
             self.train()
             train_loss = 0.0
 
-            np.random.shuffle(indexes)
+            rng.shuffle(indexes)
             for start_index in range(0, len(indexes), self.batch_size):
                 batch_indexes = indexes[start_index:start_index + self.batch_size]
                 batch_X = X_train_t[batch_indexes].to(self.device)
@@ -100,11 +103,11 @@ class DLM(nn.Module):
                     predictions.append(outputs.cpu().numpy())
 
             predictions = np.squeeze(np.concatenate(predictions))
-            val_f1 = get_metric(y_true=np.asarray(y_val_t), y_pred=predictions)
+            val_f1 = get_metric(y_true=y_val, y_pred=(predictions >= 0.5).astype(int))
             print('Validation loss:', val_loss / np.ceil(X_val_t.shape[0] / self.batch_size), '\nValidation F1:', val_f1)
 
 
-    def predict(self, X) -> np.ndarray:
+    def predict_proba(self, X) -> np.ndarray:
         self.eval()
         X_t = torch.tensor(X, dtype=torch.float32)
 
@@ -116,17 +119,31 @@ class DLM(nn.Module):
                 outputs = self.forward(batch_X)
                 predictions.append(outputs.cpu().numpy())
 
-            return np.squeeze(np.concatenate(predictions))
+            preds = np.squeeze(np.concatenate(predictions))
+            return np.column_stack([1 - preds, preds])
 
 
-    def get_state(self) -> dict:
-        return {
-            'model_state_dict': self.state_dict(),
-            'input_size': self.input_size
-        }
+    def save(self, *, path: str) -> None:
+        torch.save({
+            'params': {
+                'output_size': self.output_size,
+                'epochs': self.epochs,
+                'batch_size': self.batch_size,
+                'learning_rate': self.learning_rate,
+                'device': self.device,
+                'random_state': self.random_state
+            },
+            'input_size': self.input_size,
+            'state_dict': self.state_dict(),
+        }, path)
 
 
-    def put_state(self, *, state: dict) -> None:
-        self.input_size = state['input_size']
-        self._build_model()
-        self.load_state_dict(state['model_state_dict'])
+    @classmethod
+    def load(cls, *, path: str) -> 'DLM':
+        ckpt = torch.load(path, map_location='cpu')
+        model = cls(**ckpt['params'])
+        model.input_size = ckpt['input_size']
+        model._build_model()
+        model.load_state_dict(ckpt['state_dict'])
+        model.to(model.device)
+        return model

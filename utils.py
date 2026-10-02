@@ -42,7 +42,7 @@ def setup_logger(*, path: str) -> logging.Logger:
 
 
 def get_metric(*, y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return float(f1_score(y_true, np.round(y_pred)))
+    return float(f1_score(y_true, y_pred))
 
 
 def create_submission(*, index: np.ndarray, predictions: np.ndarray, path: str) -> dict:

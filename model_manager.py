@@ -23,7 +23,7 @@ class ModelManager:
             self._load_models()
 
 
-    def fit(self, df: pd.DataFrame) -> dict:
+    def fit(self, *, df: pd.DataFrame) -> dict:
         X = df.drop('Survived', axis=1)
         y = df.Survived
         X_test, y_test = None, None
@@ -40,7 +40,7 @@ class ModelManager:
         splitter = StratifiedKFold(
             n_splits=self.config.general.n_splits, 
             shuffle=self.config.general.is_shuffle, 
-            random_state=self.config.general.seed
+            random_state=self.config.general.seed if self.config.general.is_shuffle else None
         )
         folds = list(splitter.split(X=X, y=y))
 
@@ -48,98 +48,115 @@ class ModelManager:
             if not is_train_model:
                 continue
 
-            model_checkpoint_path = os.path.join(self.config.paths.path_to_models, model_name)
-            os.makedirs(model_checkpoint_path, exist_ok=True)
-
-            self.models[model_name] = {}
-            self.state_checkpoint['models'][model_name] = {}
-
-            artifacts[model_name] = {'fold_metrics': []}
-            oof = np.zeros(len(X))
-
-            for i, (train_index, val_index) in tqdm(enumerate(folds), desc=f'Model: {model_name}'):
-                fold_checkpoint_path = os.path.join(model_checkpoint_path, f'fold_{i}')
-                os.makedirs(fold_checkpoint_path, exist_ok=True)
-
-                data_transformer_path = os.path.join(fold_checkpoint_path, 'transformers')
-                data_transformer = DataTransformer(
-                    config=self.config, 
-                    path=data_transformer_path, 
-                    model_name=model_name
-                )
-
-                if self.config.general.is_refit_datatransformer:
-                    X_train = data_transformer.fit_transform(X=X.iloc[train_index])
-                else:
-                    data_transformer.load_state()
-                    X_train = data_transformer.transform(X=X.iloc[train_index])
-
-                X_val = data_transformer.transform(X=X.iloc[val_index])
-                y_train = np.asarray(y.iloc[train_index])
-                y_val = np.asarray(y.iloc[val_index])
-
-                model_trainer_path = os.path.join(fold_checkpoint_path, 'model.pickle')
-                model_trainer = ModelTrainer(
-                    config=self.config, 
-                    path=model_trainer_path, 
-                    model_name=model_name
-                )
-
-                artifacts_fold = model_trainer.fit(
-                    X_train=X_train,
-                    y_train=y_train,
-                    X_val=X_val,
-                    y_val=y_val,
-                )
-                val_predictions = model_trainer.predict(X=X_val)
-                val_metric = get_metric(y_true=y_val, y_pred=val_predictions)
-
-                self.models[model_name][f'fold_{i}'] = {
-                    'data_transformer': data_transformer, 
-                    'model_trainer': model_trainer
-                }
-                self.state_checkpoint['models'][model_name][f'fold_{i}'] = {
-                    'data_transformer_path': data_transformer_path, 
-                    'model_trainer_path': model_trainer_path
-                }
-
-                artifacts[model_name]['fold_metrics'].append(val_metric)
-                oof[val_index] = val_predictions
-
-                if self.config.general.is_save_models:
-                    self._save_models(data_transformer=data_transformer, model_trainer=model_trainer)
-                    self._save_state()
-
-            artifacts[model_name]['mean_metric'] = np.mean(artifacts[model_name]['fold_metrics'])
-            artifacts[model_name]['oof_predictions'] = oof
+            self._train_one_model(X=X, y=y, model_name=model_name, folds=folds, artifacts=artifacts)
 
         if self.config.general.is_eval_test:
             if X_test is None or y_test is None:
                 raise Exception('X_test or y_test is not defined')
-            test_predictions, predictions = self.predict(X=X_test)
+            
+            all_predictions = self._predict_per_model(X=X_test)
+            predictions = self._blend(all_predictions=all_predictions)
+
             artifacts['test_metrics'] = {}
-            for model_name, preds in test_predictions.items():
+            for model_name, preds in all_predictions.items():
+                preds = (preds >= self.config.general.predict_threshold).astype(int)
                 artifacts['test_metrics'][model_name] = get_metric(y_true=y_test, y_pred=preds)
+                
             artifacts['test_metrics']['ensemble'] = get_metric(y_true=y_test, y_pred=predictions)
             artifacts['test_predictions'] = predictions
         return artifacts
 
 
-    def predict(self, *, X: pd.DataFrame) -> tuple[dict, np.ndarray] | np.ndarray:
-        all_predictions = {}
-        for model_name, folds in self.models.items():
-            all_predictions[model_name] = np.zeros(len(X))
-            for fold_name, models in folds.items():
-                X_transformed = models['data_transformer'].transform(X=X)
-                preds = np.asarray(models['model_trainer'].predict(X=X_transformed))
-                all_predictions[model_name] += preds / len(folds)
-            all_predictions[model_name] = np.clip(all_predictions[model_name], 0, 1)
+    def predict(self, *, X: pd.DataFrame) ->np.ndarray:
+        return self._blend(all_predictions=self._predict_per_model(X=X))
 
-        predictions = np.zeros(len(X))
-        for model_name, weight in self.config.models.to_inference.items():
-            predictions += all_predictions[model_name] * weight
-        predictions = np.round(predictions).astype(int)
-        return all_predictions, predictions
+
+    def _train_one_model(self, *, X: pd.DataFrame, y: pd.Series, model_name: str, folds: list, artifacts: dict):
+        model_checkpoint_path = os.path.join(self.config.paths.path_to_models, model_name)
+        os.makedirs(model_checkpoint_path, exist_ok=True)
+
+        self.models[model_name] = {}
+        self.state_checkpoint['models'][model_name] = {}
+
+        artifacts[model_name] = {'fold_metrics': []}
+        oof = np.zeros(len(X))
+
+        for i, (train_index, val_index) in tqdm(enumerate(folds), desc=f'Model: {model_name}'):
+            fold_checkpoint_path = os.path.join(model_checkpoint_path, f'fold_{i}')
+            os.makedirs(fold_checkpoint_path, exist_ok=True)
+
+            data_transformer_path = os.path.join(fold_checkpoint_path, 'transformers')
+            data_transformer = DataTransformer(
+                config=self.config, 
+                path=data_transformer_path, 
+                model_name=model_name
+            )
+
+            if self.config.general.is_refit_datatransformer:
+                X_train = data_transformer.fit_transform(X=X.iloc[train_index])
+            else:
+                data_transformer.load_state()
+                X_train = data_transformer.transform(X=X.iloc[train_index])
+
+            X_val = data_transformer.transform(X=X.iloc[val_index])
+            y_train = np.asarray(y.iloc[train_index])
+            y_val = np.asarray(y.iloc[val_index])
+
+            model_trainer_path = os.path.join(fold_checkpoint_path, 'model.pickle')
+            model_trainer = ModelTrainer(
+                config=self.config, 
+                path=model_trainer_path, 
+                model_name=model_name
+            )
+
+            artifacts_fold = model_trainer.fit(
+                X_train=X_train,
+                y_train=y_train,
+                X_val=X_val,
+                y_val=y_val,
+            )
+            val_predictions = model_trainer.predict_proba(X=X_val)
+            val_metric = get_metric(y_true=y_val, y_pred=(val_predictions >= self.config.general.predict_threshold).astype(int))
+
+            self.models[model_name][f'fold_{i}'] = {
+                'data_transformer': data_transformer, 
+                'model_trainer': model_trainer
+            }
+            self.state_checkpoint['models'][model_name][f'fold_{i}'] = {
+                'data_transformer_path': data_transformer_path, 
+                'model_trainer_path': model_trainer_path
+            }
+
+            artifacts[model_name]['fold_metrics'].append(val_metric)
+            oof[val_index] = val_predictions
+
+            if self.config.general.is_save_models:
+                self._save_models(data_transformer=data_transformer, model_trainer=model_trainer)
+                self._save_state()
+
+        artifacts[model_name]['mean_metric'] = np.mean(artifacts[model_name]['fold_metrics'])
+        artifacts[model_name]['oof_predictions'] = oof
+
+
+    def _predict_per_model(self, *, X: pd.DataFrame) -> dict:
+        all_predictions = {}
+        for model_name, fold_models in self.models.items():
+            all_predictions[model_name] = np.zeros(len(X))
+
+            for models in fold_models.values():
+                X_transformed = models['data_transformer'].transform(X=X)
+                predictions = models['model_trainer'].predict_proba(X=X_transformed)
+                all_predictions[model_name] += predictions / len(fold_models)
+
+            all_predictions[model_name] = np.clip(all_predictions[model_name], 0, 1)
+        return all_predictions
+
+
+    def _blend(self, *, all_predictions: dict[str, np.ndarray]) -> np.ndarray:
+        weights = self.config.models.to_inference
+        weights_sum = sum(weights.values())
+        predictions = sum(all_predictions[m] * w for m, w in weights.items()) / weights_sum
+        return (predictions >= self.config.general.predict_threshold).astype(int)
 
 
     def _save_state(self) -> None:
