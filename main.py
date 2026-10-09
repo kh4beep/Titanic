@@ -1,9 +1,11 @@
 import os
 import time
 import shutil
+import logging
 
+from tqdm.contrib.logging import logging_redirect_tqdm
 from config import config
-from utils import set_seed, setup_logger
+from utils import set_seed, setup_logger, create_metrics_tables
 from runner import run
 
 
@@ -21,9 +23,16 @@ def main(*, config):
 
     start_time = time.time()
 
-    artifacts = run(config=config)
-    
-    logger.info(artifacts)    
+    with logging_redirect_tqdm():
+        artifacts = run(config=config)
+
+    if 'metrics' in artifacts:
+        rest = {k: v for k, v in artifacts.items() if k != 'metrics'}
+        if rest:
+            logger.info(rest)
+        logger.info(create_metrics_tables(metrics=artifacts['metrics']))
+    else:
+        logger.info(artifacts)
     logger.info(f'Total Time: {int(time.time() - start_time)} s')
 
 

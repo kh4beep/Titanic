@@ -1,7 +1,6 @@
 import pickle
 
 import numpy as np
-import pandas as pd
 
 from typing import Any, cast
 from omegaconf import OmegaConf
@@ -63,6 +62,20 @@ class ModelTrainer:
 
     def predict_proba(self, *, X: np.ndarray) -> np.ndarray:
         return self.model.predict_proba(X)[:, 1]
+
+
+    def get_feature_importance(self) -> dict[str, np.ndarray]:
+        inner = (
+            [cc.estimator for cc in self.model.calibrated_classifiers_]
+            if isinstance(self.model, CalibratedClassifierCV) else [self.model]
+        )
+        if self.model_name in ('LogisticRegression', 'LinearSVC'):
+            return {'coef': np.mean([m.coef_[0] for m in inner], axis=0)}
+        if self.model_name in ('DecisionTreeClassifier', 'RandomForestClassifier'):
+            return {'impurity': np.mean([m.feature_importances_ for m in inner], axis=0)}
+        if self.model_name == 'CatBoostClassifier':
+            return {'prediction_values_change': np.mean([m.get_feature_importance() for m in inner], axis=0)}
+        return {}
 
 
     def save_state(self) -> None:

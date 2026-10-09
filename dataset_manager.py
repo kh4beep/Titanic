@@ -1,5 +1,6 @@
 import pickle
 
+import numpy as np
 import pandas as pd
 
 class DatasetManager:
@@ -48,22 +49,29 @@ class DatasetManager:
     
     def _build_dataset(self, *, df: pd.DataFrame) -> pd.DataFrame:
         print('Initial shape:', df.shape)
-        # def get_deck(cabin):
-        #     if type(cabin) == str:
-        #         parts = cabin.split()
-        #         if len(parts) == 1:
-        #             return cabin[0]
-        #         for part in parts:
-        #             if len(part) > 1:
-        #                 return part[0]
-        #     return 'Unknown'
-        # df['Deck'] = df.Cabin.apply(get_deck)
-        # df['Surname'] = df.Name.apply(lambda x: x[:x.find(',')])
-        # df['Title'] = df.Name.apply(lambda x: x[x.find(',')+2:x.find('.')])
+        def get_deck(cabin):
+            if type(cabin) == str:
+                parts = cabin.split()
+                if len(parts) == 1:
+                    return cabin[0]
+                for part in parts:
+                    if len(part) > 1:
+                        return part[0]
+            return 'Unknown'
+        
+        df['Deck'] = df['Cabin'].apply(get_deck)
+        df['Surname'] = df['Name'].apply(lambda x: x[:x.find(',')])
+        df['Title'] = df['Name'].apply(lambda x: x[x.find(',')+2:x.find('.')])
+        df.loc[~df.Title.isin(['Mr', 'Miss', 'Mrs', 'Master']), 'Title'] = 'Rare'
+        df['FamilySize'] = pd.cut(
+            df['SibSp'] + df['Parch'],
+            bins=[-1, 0, 2, 5, np.inf],
+            labels=['Solo', 'Small', 'Medium', 'Big'],
+        ).astype(str)
 
         if self.config.general.is_train:
             # Add dataset transformations here
-            drop_columns = ['Name', 'Ticket', 'Cabin']
+            drop_columns = ['Name', 'Cabin']
             self.dataset_checkpoint['dropcols'] = drop_columns
         else:
             # Add dataset transformations here

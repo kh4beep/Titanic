@@ -1,11 +1,11 @@
 import torch
+import logging 
 
 import numpy as np
-import pandas as pd
 import torch.nn as nn
 
 from torch.optim import Adam
-from utils import get_metric
+from sklearn.metrics import roc_auc_score
 
 
 class DLM(nn.Module):
@@ -17,14 +17,17 @@ class DLM(nn.Module):
         batch_size: int = 32, 
         learning_rate: float = 0.001,
         device: str = 'cpu',
+        verbose: int = 0,
         random_state: int = 42,
     ):
         super(DLM, self).__init__()
+        self.logger = logging.getLogger(__name__)
         self.output_size = output_size
         self.epochs = epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.device = device
+        self.verbose = verbose
         self.random_state = random_state
         self.mlp = None
         self.input_size = None
@@ -66,8 +69,6 @@ class DLM(nn.Module):
         indexes = np.arange(X_train_t.shape[0])
 
         for epoch in range(self.epochs):
-            print(f'\nEpoch {epoch + 1}/{self.epochs}')
-
             self.train()
             train_loss = 0.0
 
@@ -85,8 +86,6 @@ class DLM(nn.Module):
 
                 train_loss += loss.item()
 
-            print('Training loss:', train_loss / np.ceil(X_train_t.shape[0] / self.batch_size))
-
             self.eval()
             val_loss = 0.0
             predictions = []
@@ -103,8 +102,13 @@ class DLM(nn.Module):
                     predictions.append(outputs.cpu().numpy())
 
             predictions = np.squeeze(np.concatenate(predictions))
-            val_f1 = get_metric(y_true=y_val, y_pred=(predictions >= 0.5).astype(int))
-            print('Validation loss:', val_loss / np.ceil(X_val_t.shape[0] / self.batch_size), '\nValidation F1:', val_f1)
+            if self.verbose and epoch % self.verbose == 0 or epoch + 1 == self.epochs:
+                logging.info(
+                    f'Epoch {epoch + 1}/{self.epochs}'
+                    f'\tTraining loss: {train_loss / np.ceil(X_train_t.shape[0] / self.batch_size):4f} '
+                    f'\tValidation loss: {val_loss / np.ceil(X_val_t.shape[0] / self.batch_size):4f}'
+                    f'\tValidation ROC AUC: {roc_auc_score(y_val, predictions):4f}'
+                )
 
 
     def predict_proba(self, X) -> np.ndarray:
