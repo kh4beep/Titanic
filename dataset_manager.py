@@ -63,11 +63,6 @@ class DatasetManager:
         df['Surname'] = df['Name'].apply(lambda x: x[:x.find(',')])
         df['Title'] = df['Name'].apply(lambda x: x[x.find(',')+2:x.find('.')])
         df.loc[~df.Title.isin(['Mr', 'Miss', 'Mrs', 'Master']), 'Title'] = 'Rare'
-        df['FamilySize'] = pd.cut(
-            df['SibSp'] + df['Parch'],
-            bins=[-1, 0, 2, 5, np.inf],
-            labels=['Solo', 'Small', 'Medium', 'Big'],
-        ).astype(str)
 
         if self.config.general.is_train:
             # Add dataset transformations here

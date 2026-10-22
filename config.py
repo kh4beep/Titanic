@@ -4,7 +4,7 @@ from omegaconf import OmegaConf
 
 config = {
     'general': {
-        'experiment_name': 'preprocessing42',
+        'experiment_name': 'hyperparameterswoc',
         'seed': 42,
         'predict_threshold': 0.5,
         'is_train': True,
@@ -36,50 +36,150 @@ config = {
             'LinearSVC': 
             {
                 'is_calibration': True,
-                'calibration_kwargs': {'method': 'sigmoid', 'cv': 3},
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': False,
+                'hyperparameter_search_kwargs': {'cv': 3},
                 'kwargs': {'random_state': '${general.seed}'}
+            },
+            'SVC': 
+            {
+                'is_calibration': True,
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': True,
+                'hyperparameter_search_kwargs': {
+                    'cv': 3,
+                    'n_iter': 25,
+                    'scoring': 'roc_auc',
+                    'param_distributions': {
+                        'C': {'type': 'loguniform', 'a': 0.01, 'b': 100},
+                        'kernel': {'type': 'choice', 'values': ['poly', 'rbf']},
+                        'gamma': {'type': 'loguniform', 'a': 0.001, 'b': 1}}
+                },
+                'kwargs': {'C': 1.0, 'kernel': 'rbf', 'gamma': 0.03, 'random_state': '${general.seed}'}
             },
             'LogisticRegression': 
             {
                 'is_calibration': False,
-                'kwargs': {'random_state': '${general.seed}'}
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': True,
+                'hyperparameter_search_kwargs': {
+                    'cv': 3,
+                    'n_iter': 25,
+                    'scoring': 'roc_auc',
+                    'param_distributions': {
+                        'C': {'type': 'loguniform', 'a': 0.01, 'b': 10.0}
+                    }
+                },
+                'kwargs': {'max_iter': 500, 'C': 1.0, 'random_state': '${general.seed}'}
+            },
+            'KNeighborsClassifier': 
+            {
+                'is_calibration': True,
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': False,
+                'hyperparameter_search_kwargs': {'cv': 3},
+                'kwargs': {'n_neighbors': 10, 'weights': 'distance'}
+            },
+            'GaussianNB': 
+            {
+                'is_calibration': True,
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': False,
+                'hyperparameter_search_kwargs': {'cv': 3},
+                'kwargs': {}
             },
             'DecisionTreeClassifier': 
             {
-                'is_calibration': False,
-                'kwargs': {'random_state': '${general.seed}'}
+                'is_calibration': True,
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': True,
+                'hyperparameter_search_kwargs': {
+                    'cv': 3,
+                    'n_iter': 100,
+                    'scoring': 'roc_auc',
+                    'param_distributions': {
+                        'ccp_alpha': {'type': 'loguniform', 'a': 0.0001, 'b': 0.01},
+                        'min_samples_leaf': {'type': 'logint', 'a': 1, 'b': 50},
+                    }
+                },
+                'kwargs': {'ccp_alpha': 0.0001, 'min_samples_leaf': 3, 'random_state': '${general.seed}'}
             },
             'RandomForestClassifier': 
             {
-                'is_calibration': False,
-                'kwargs': {'random_state': '${general.seed}'}
+                'is_calibration': True,
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': True,
+                'hyperparameter_search_kwargs': {
+                    'cv': 3,
+                    'n_iter': 25,
+                    'scoring': 'roc_auc',
+                    'n_jobs': -1,
+                    'param_distributions': {
+                        'max_features': {'type': 'uniform', 'a': 0.1, 'b': 0.8},
+                        'min_samples_leaf': {'type': 'logint', 'a': 1, 'b': 30},
+                        'max_samples': {'type': 'uniform', 'a': 0.4, 'b': 1.0}
+                    }
+                },
+                'kwargs': {
+                    'max_features': 0.25,
+                    'min_samples_leaf': 7,
+                    'max_samples': 0.9,
+                    'random_state': '${general.seed}'
+                }
             },
             'CatBoostClassifier': 
             {
                 'is_calibration': False,
+                'calibration_kwargs': {'cv': 3, 'ensemble': False},
+                'is_hyperparameter_search': True,
+                'hyperparameter_search_kwargs': {
+                    'cv': 3,
+                    'n_iter': 3,
+                    'scoring': 'roc_auc',
+                    'n_jobs': -1,
+                    'param_distributions': {
+                        'learning_rate': {'type': 'uniform', 'a': 0.01, 'b': 0.05},
+                        # 'depth': {'type': 'int', 'a': 4, 'b': 8},
+                        # 'l2_leaf_reg': {'type': 'loguniform', 'a': 1, 'b': 10},
+                        # 'bagging_temperature': {'type': 'uniform', 'a': 0, 'b': 1}
+                    }
+                },
+                'val_size': 0.0,
+                'fit_kwargs': {'cat_features': ['Sex', 'Embarked', 'Title', 'Deck', 'Ticket', 'Surname']},
                 'kwargs': {
+                    'learning_rate': 0.03,
+                    'depth': 6,
+                    'l2_leaf_reg': 3,
+                    'bagging_temperature': 0.95,
+                    'iterations': 300,
+                    'one_hot_max_size': 3,
+                    'verbose': 0, 
+                    'allow_writing_files': False,
                     'random_state': '${general.seed}',
-                    'verbose': 100, 
-                    'allow_writing_files': False
                 }
             },
             'DLM': 
             {
-                'is_calibration': False,
-                'kwargs': {'verbose': 10, 'random_state': '${general.seed}'}
+                'kwargs': {'early_stopping': False, 'verbose': 10, 'random_state': '${general.seed}'}
             },
         },
         'to_train': {
-            'LinearSVC': True,
+            'LinearSVC': False,
+            'SVC': True,
             'LogisticRegression': True,
+            'KNeighborsClassifier': True,
+            'GaussianNB': True,
             'DecisionTreeClassifier': True,
             'RandomForestClassifier': True,
             'CatBoostClassifier': True,
             'DLM': True
         },
         'to_inference': {
-            'LinearSVC': 1,
+            'LinearSVC': 0,
+            'SVC': 1,
             'LogisticRegression': 1,
+            'KNeighborsClassifier': 1,
+            'GaussianNB': 1,
             'DecisionTreeClassifier': 1,
             'RandomForestClassifier': 1,
             'CatBoostClassifier': 1,

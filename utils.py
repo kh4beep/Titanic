@@ -6,6 +6,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from scipy.stats import loguniform
 from sklearn.metrics import f1_score, roc_auc_score, accuracy_score
 
 
@@ -78,3 +79,12 @@ def create_metrics_tables(*, metrics: dict) -> str:
             })
     df = pd.DataFrame(rows).set_index(['metric', 'model']).astype(float).round(4)
     return '\n' + '\n\n'.join(f'{metric}:\n{df.loc[metric].to_string()}' for metric in df.index.unique('metric'))
+
+
+class LogUniformInt:
+    def __init__(self, a: int, b: int):
+        self.a, self.b = a, b
+        self._dist = loguniform(a, b + 1)
+
+    def rvs(self, size=None, random_state=None):
+        return np.floor(self._dist.rvs(size=size, random_state=random_state)).astype(int)

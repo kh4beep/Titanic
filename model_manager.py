@@ -30,7 +30,6 @@ class ModelManager:
     def fit(self, *, df: pd.DataFrame) -> dict:
         X = df.drop('Survived', axis=1)
         y = df.Survived
-        # y = pd.Series(np.random.default_rng(42).permutation(y.to_numpy()), index=y.index) # leakage test
         X_test, y_test = None, None
         if self.config.general.is_hold_test:
             X, X_test, y, y_test = train_test_split(
@@ -41,7 +40,7 @@ class ModelManager:
                 stratify=y
             )
 
-        artifacts = {}
+        artifacts = {'best_params': {}}
         metrics = {}
         importances = {}
         all_oof_predictions = {}
@@ -65,13 +64,13 @@ class ModelManager:
 
         columns = {}
         for (model_name, kind), per_fold in importances.items():
-            folds = pd.concat(per_fold, axis=1)
-            columns[f'{model_name}_{kind}_mean'] = folds.mean(axis=1)
-            columns[f'{model_name}_{kind}_std'] = folds.std(axis=1)
+            all_folds = pd.concat(per_fold, axis=1)
+            columns[f'{model_name}_{kind}_mean'] = all_folds.mean(axis=1)
+            columns[f'{model_name}_{kind}_std'] = all_folds.std(axis=1)
         pd.DataFrame(columns).to_csv(self.config.paths.path_to_importance)
 
         ensemble_oof_predictions = self._blend(all_predictions=all_oof_predictions)
-        all_oof_predictions['ensemble'] = (ensemble_oof_predictions >= self.threshold).astype(int)
+        all_oof_predictions['ensemble'] = ensemble_oof_predictions
         metrics['ensemble'] = {'oof': get_metrics(y_true=np.asarray(y), y_pred=ensemble_oof_predictions, threshold=self.threshold)}
         pd.DataFrame(all_oof_predictions, index=X.index).assign(target=y).to_csv(self.config.paths.path_to_oof)
 
@@ -106,7 +105,8 @@ class ModelManager:
 
         self.models[model_name] = {}
         self.state_checkpoint['models'][model_name] = {}
-
+        best_params = {}
+        best_epochs = []
         metrics[model_name] = {'per_fold': []}
         oof = np.zeros(len(X))
 
@@ -119,7 +119,7 @@ class ModelManager:
                 config=self.config, 
                 path=data_transformer_path, 
                 model_name=model_name,
-                verbose=1 if i == 0 else 0
+                verbose=1 if i == 0 else 0,
             )
 
             X_train = X.iloc[train_index]
@@ -136,18 +136,27 @@ class ModelManager:
             y_val = np.asarray(y.iloc[val_index])
 
             model_trainer_path = os.path.join(fold_checkpoint_path, 'model.pickle')
+
+            if i == 0 and self.config.models.params[model_name].get('is_hyperparameter_search', False):
+                best_params = ModelTrainer(
+                    config=self.config,
+                    path=model_trainer_path,
+                    model_name=model_name
+                ).get_best_params(X=X_train, y=y_train)
+                artifacts['best_params'][model_name] = best_params
+
             model_trainer = ModelTrainer(
                 config=self.config, 
                 path=model_trainer_path, 
-                model_name=model_name
+                model_name=model_name,
+                best_params=best_params
             )
 
-            artifacts_fold = model_trainer.fit(
-                X_train=X_train,
-                y_train=y_train,
-                X_val=X_val,
-                y_val=y_val,
-            )
+            artifacts_fold = model_trainer.fit(X=X_train, y=y_train)
+            if 'history' in artifacts_fold:
+                history = {k: v for k, v in artifacts_fold['history'].items() if v}  # без early_stopping списки val_* пустые
+                pd.DataFrame(history).to_csv(os.path.join(fold_checkpoint_path, 'history.csv'), index=False)
+                best_epochs.append(artifacts_fold['best_epoch'])
             val_predictions = model_trainer.predict_proba(X=X_val)
             val_metrics = get_metrics(y_true=y_val, y_pred=val_predictions, threshold=self.threshold)
 
