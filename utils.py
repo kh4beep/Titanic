@@ -1,5 +1,4 @@
 import random
-import os
 import sys
 import torch
 import logging
@@ -11,8 +10,8 @@ from sklearn.metrics import f1_score, roc_auc_score, accuracy_score
 
 
 def set_seed(*, seed: int):
+    """Seed Python, NumPy and torch RNGs and make cuDNN deterministic."""
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
@@ -42,9 +41,10 @@ def setup_logger(*, path: str) -> logging.Logger:
     return logger
 
 
-def get_metrics(*, y_true: np.ndarray, y_pred: np.ndarray, threshold: float) -> dict[str, float]:
+def get_metrics(*, y_true: np.ndarray, y_proba: np.ndarray, threshold: float) -> dict[str, float]:
+    """Accuracy and F1 at the threshold, ROC AUC on probabilities."""
     y_true = np.asarray(y_true)
-    y_proba = np.asarray(y_pred)
+    y_proba = np.asarray(y_proba)
     y_label = (y_proba >= threshold).astype(int)
     result = {}
     result['accuracy'] = float(accuracy_score(y_true, y_label))
@@ -66,6 +66,11 @@ def create_submission(*, index: np.ndarray, predictions: np.ndarray, path: str) 
 
 
 def create_metrics_tables(*, metrics: dict) -> str:
+    """
+    Format metrics as one table per metric.
+    Columns: oof_mean/oof_std over validation folds, oof on all OOF predictions,
+    test on the hold-out (NaN if not evaluated).
+    """
     rows = []
     for model, m in metrics.items():
         per_fold = pd.DataFrame(m['per_fold']) if 'per_fold' in m else pd.DataFrame()
@@ -82,6 +87,10 @@ def create_metrics_tables(*, metrics: dict) -> str:
 
 
 class LogUniformInt:
+    """
+    Integers in [a, b] inclusive, uniform on the log scale; a scipy-like rvs for RandomizedSearchCV.
+    Samples floor(loguniform(a, b + 1)), so both bounds get their full share. Requires a >= 1.
+    """
     def __init__(self, a: int, b: int):
         self.a, self.b = a, b
         self._dist = loguniform(a, b + 1)

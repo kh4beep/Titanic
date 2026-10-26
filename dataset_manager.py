@@ -1,10 +1,17 @@
 import pickle
+import logging
 
-import numpy as np
 import pandas as pd
 
+from omegaconf import DictConfig
+
 class DatasetManager:
-    def __init__(self, *, config) -> None:
+    """
+    Build row-wise features and cache the resulting dataset.
+    Only transformations that use a single row belong here
+    """
+    def __init__(self, *, config: DictConfig) -> None:
+        self.logger = logging.getLogger(__name__)
         self.config = config
 
         if config.general.is_train and config.general.is_rebuild_dataset:
@@ -14,6 +21,7 @@ class DatasetManager:
 
 
     def get_dataset(self, *, df: pd.DataFrame) -> pd.DataFrame:
+        """Return the feature dataset: rebuilt or loaded from cache depending on config."""
         if not self.config.general.is_train:
             df = self._build_dataset(df=df)
         elif self.config.general.is_rebuild_dataset:
@@ -27,30 +35,30 @@ class DatasetManager:
 
 
     def _save_dataset_checkpoint(self) -> None:
-        with open(self.config.paths.path_to_dataset_checkpoint, "wb") as f:
+        with open(self.config.paths.dataset_checkpoint, "wb") as f:
             pickle.dump(self.dataset_checkpoint, f)
 
 
     def _load_dataset_checkpoint(self) -> None:
-        with open(self.config.paths.path_to_dataset_checkpoint, 'rb') as f:
+        with open(self.config.paths.dataset_checkpoint, 'rb') as f:
             self.dataset_checkpoint = pickle.load(f)
 
 
     def _save_dataset(self, *, df: pd.DataFrame) -> None:
-        df.to_csv(self.config.paths.path_to_modified_dataset, index=True)
+        df.to_csv(self.config.paths.modified_dataset, index=True)
 
 
     def _load_dataset(self) -> pd.DataFrame:
-        df = pd.read_csv(self.config.paths.path_to_modified_dataset, index_col='PassengerId')
-        # Restore dataset state here
+        df = pd.read_csv(self.config.paths.modified_dataset, index_col=self.config.general.index_col)
         df = df.astype(self.dataset_checkpoint['dtypes'])
         return df    
 
     
     def _build_dataset(self, *, df: pd.DataFrame) -> pd.DataFrame:
-        print('Initial shape:', df.shape)
+        df = df.copy()
+        self.logger.info(f'Initial shape: {df.shape}')
         def get_deck(cabin):
-            if type(cabin) == str:
+            if isinstance(cabin, str):
                 parts = cabin.split()
                 if len(parts) == 1:
                     return cabin[0]
@@ -65,18 +73,16 @@ class DatasetManager:
         df.loc[~df.Title.isin(['Mr', 'Miss', 'Mrs', 'Master']), 'Title'] = 'Rare'
 
         if self.config.general.is_train:
-            # Add dataset transformations here
             drop_columns = ['Name', 'Cabin']
             self.dataset_checkpoint['dropcols'] = drop_columns
         else:
-            # Add dataset transformations here
             drop_columns = self.dataset_checkpoint['dropcols']
 
         df = df.drop(drop_columns, axis=1)
         self.dataset_checkpoint['dtypes'] = dict(df.dtypes)
         
-        print('Shape after build dataset:', df.shape)
-        print('There are', df.isna().sum().sum(), 'missing values.')
-        print('There are', (df.nunique() == 2).sum(), 'binary columns.')
+        self.logger.info(f'Shape after build dataset: {df.shape}')
+        self.logger.info(f'There are {df.isna().sum().sum()} missing values.')
+        self.logger.info(f'There are {(df.nunique() == 2).sum()} binary columns.')
 
         return df

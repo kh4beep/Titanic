@@ -12,6 +12,11 @@ from sklearn.metrics import roc_auc_score
 
 
 class DLM(nn.Module):
+    """
+    Small MLP binary classifier with a sklearn-like interface (fit / predict_proba).
+    The network outputs logits; sigmoid is applied only in predict_proba.
+    Fitted attributes: history_ (per-epoch metrics and lr), best_epoch_, stopped_epoch_.
+    """
     def __init__(
         self,
         *,
@@ -77,6 +82,14 @@ class DLM(nn.Module):
 
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'DLM':
+        """
+        Train with Adam and a warmup / plateau / cosine decay / low-plateau lr schedule.
+        With early_stopping, validation_fraction of X is held out internally and the weights
+        of the best epoch by val loss are restored at the end. The schedule assumes all epochs
+        run, so its decay phase may never be reached with early stopping.
+        """
+        if self.warmup_epochs + 2 * self.plateau_epochs >= self.epochs:
+            raise ValueError('warmup_epochs and plateau_epochs are too large')
         torch.manual_seed(self.random_state)
         rng = np.random.default_rng(self.random_state)
 
@@ -156,6 +169,7 @@ class DLM(nn.Module):
 
 
     def get_training_artifacts(self) -> dict:
+        """Return a copy of the training history and the best/stopped epochs."""
         if not self.history_:
             raise RuntimeError('Model is not fitted')
         return {
@@ -166,6 +180,11 @@ class DLM(nn.Module):
 
 
     def _lr_multiplier(self, epoch: int) -> float:
+        """
+        Factor for the base learning rate at a given epoch.
+        Phases: linear warmup -> plateau at 1 -> cosine decay -> plateau at min_lr_ratio;
+        both plateaus last plateau_epochs.
+        """
         if epoch < self.warmup_epochs:
             return (epoch + 1) / self.warmup_epochs
         decay_start = self.warmup_epochs + self.plateau_epochs
@@ -230,6 +249,7 @@ class DLM(nn.Module):
 
 
     def save(self, *, path: str) -> None:
+        """Save constructor params, weights and training artifacts to one torch checkpoint."""
         torch.save({
             'params': {
                 'output_size': self.output_size,
@@ -255,6 +275,7 @@ class DLM(nn.Module):
 
     @classmethod
     def load(cls, *, path: str) -> 'DLM':
+        """Rebuild a fitted model from a checkpoint written by save()."""
         ckpt = torch.load(path, map_location='cpu')
         model = cls(**ckpt['params'])
         model.input_size = ckpt['input_size']

@@ -8,6 +8,11 @@ from sklearn.compose import ColumnTransformer
 
 
 def on_columns(transformer, columns: list[str]) -> ColumnTransformer:
+    """
+    Apply a transformer to the given columns and pass the rest through unchanged.
+    Note: ColumnTransformer puts the transformed columns first, so column order changes.
+    Output names stay unprefixed (verbose_feature_names_out=False), so they must be unique.
+    """
     return ColumnTransformer(
         [('t', transformer, columns)],
         remainder='passthrough',
@@ -17,6 +22,10 @@ def on_columns(transformer, columns: list[str]) -> ColumnTransformer:
 
 
 class GroupStatImputer(BaseEstimator, TransformerMixin):
+    """
+    Fill NaN in target_col with a per-group statistic learned at fit.
+    Groups with fewer than min_count_group rows fall back to the global statistic.
+    """
     def __init__(self, *, target_col: str, group_cols: list[str], method: str, min_count_group: int = 10) -> None:
         self.target_col = target_col
         self.group_cols = group_cols
@@ -50,6 +59,11 @@ class GroupStatImputer(BaseEstimator, TransformerMixin):
 
 
 class EstimatorImputer(BaseEstimator, TransformerMixin):
+    """
+    Fill NaN in target_col with predictions of an estimator trained on rows where it is known.
+    The estimator sees every other column that reaches this step, so its feature set is
+    defined by the pipeline position; wrap it in a Pipeline to encode or select inputs.
+    """
     def __init__(self, *, target_col: str, estimator: BaseEstimator) -> None:
         self.target_col = target_col
         self.estimator = estimator
@@ -79,6 +93,13 @@ class EstimatorImputer(BaseEstimator, TransformerMixin):
 
 
 class MyTargetEncoder(BaseEstimator, TransformerMixin):
+    """
+    Smoothed target rate per group, plus a flag whether the group was seen.
+    rate = (sum + smoothing * prior) / (count + smoothing), so small groups shrink to the
+    global rate. fit_transform cross-fits: each train row is encoded with stats from the
+    other folds only, otherwise its own target would leak into its feature. transform uses
+    stats from all fitted rows and is meant for unseen data only.
+    """
     def __init__(self, *, group_cols: list[str], name: str, smoothing: float = 1.0) -> None:
         self.group_cols = group_cols
         self.name = name
