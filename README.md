@@ -1,14 +1,64 @@
-# Проект по задаче "Титаник"
+# Проект по задаче «Титаник»
 
-## Инструкция по запуску:
-1. Установить зависимости из requirements.txt
-2. Указать актуальные пути до датасета в config.py (config.general.paths.dataset и test_dataset)
-3. Запустить файл main.py
+Предсказание выживания пассажиров Titanic. Цель — `Survived`: 1 — выжил, 0 — не выжил. Основная метрика Kaggle — accuracy; дополнительно оцениваются F1 и ROC AUC.
 
-## Результаты:
-- Проведен EDA
-- Выполнен feature engineering
-- Выполнен препроцессинг признаков
-- Обучены с подбором гиперпараметров 9 моделей (LinearSVC, SVC, LogisticRegression, KNeighborsClassifier, GaussianNB, DecisionTreeClassifier, RandomForestClassifier, CatBoostClassifier, DLM)
-- Построен усредняющий ансамбль с выбором моделей и весов (KNeighborsClassifier\*0.5 + CatBoost\*1 + DLM\*1)
-- Метрика на Kaggle 0.7967
+## Инструкция по запуску
+
+Все команды выполнять из корня проекта: пути в конфиге относительные.
+
+1. Установить зависимости:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Указать пути к Kaggle `train.csv` и `test.csv` в `config.paths.dataset` и `config.paths.test_dataset` в `config.py`.
+3. Для обучения установить `config.general.is_train = True` и запустить:
+
+   ```bash
+   python main.py
+   ```
+
+4. Для submission установить `config.general.is_train = False` и повторно выполнить `python main.py`.
+
+
+## Результаты
+
+- Проведён EDA, исследованы пропуски, распределения и связи признаков.
+- Из имени и каюты получены `Surname`, `Title` и `Deck`.
+- Для части моделей используются one-hot encoding, преобразования числовых признаков и target encoding групп по билету и фамилии с классом пассажира.
+- Реализованы LinearSVC, SVC, LogisticRegression, KNeighborsClassifier, GaussianNB, DecisionTreeClassifier, RandomForestClassifier, CatBoostClassifier и DLM; отдельный baseline использует LogisticRegression.
+- Реализованы подбор параметров, калибровка вероятностей, анализ согласованности моделей и SHAP.
+- Kaggle accuracy итогового ансамбля — **0.7967**.
+
+## Схема оценки
+
+- 20% размеченных данных выделяется в holdout со стратификацией по `Survived`; seed — 42. Остальные 80% используются для разработки.
+- На development-части строятся OOF-предсказания на 5 стратифицированных фолдах. Препроцессинг обучается на тренировочной части каждого фолда; target encoding обучающих строк использует внутренний cross-fitting.
+- Подбор параметров выполняется один раз на тренировочной части первого фолда; выбранные параметры используются во всех последующих фолдах.
+- Внутренний поиск и калибровка получают уже преобразованные признаки, включая target encoding. Это ограничивает независимость их внутренних оценок. OOF после подбора используется как рабочая оценка, а не независимая итоговая проверка.
+- Holdout не участвует в поиске и предназначен для итоговой проверки.
+- Accuracy и F1 считаются после применения `general.predict_threshold`; ROC AUC — по вероятностям. Подбор использует ROC AUC, поэтому его цель отличается от accuracy соревнования.
+
+## Сравнение экспериментов
+
+| Эксперимент | OOF accuracy | OOF F1 | Holdout accuracy | Holdout F1 | Kaggle accuracy |
+|---|---:|---:|---:|---:|---:|
+| baseline | — | 0.7616 | — | 0.7692 | 0.7631 |
+| baseline_probability | — | 0.7657 | — | 0.7727 | 0.7584 |
+| preprocessing | 0.8329 | 0.7742 | — | — | — |
+| hyperparameters | 0.8230 | 0.7658 | — | — | — |
+| ensemble | 0.8469 | 0.7978 | 0.8101 | 0.7500 | 0.79665 |
+
+## Итоговый ансамбль
+
+Взвешенное усреднение вероятностей KNeighborsClassifier, CatBoostClassifier и DLM с весами 0.5, 1 и 1. Сначала усредняются вероятности фолдовых моделей каждого типа, затем вычисляется:
+
+```text
+p = (0.5 * p_KNN + p_CatBoost + p_DLM) / 2.5
+Survived = 1, если p >= 0.5, иначе 0
+```
+
+KNN использует калибровку; CatBoost и DLM — без дополнительной калибровки. Модели и веса задаются в `models.to_inference`.
+
+Результат: OOF accuracy **0.8427**, holdout accuracy **0.8101**, Kaggle accuracy **0.79665**.

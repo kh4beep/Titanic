@@ -4,7 +4,7 @@ from omegaconf import OmegaConf
 
 config = {
     'general': {
-        'experiment_name': 'ensemble',
+        'experiment_name': 'new_experiment',
         'seed': 42,
         'predict_threshold': 0.5,
         'is_train': True,
@@ -16,7 +16,7 @@ config = {
         'test_size': 0.2,
         'n_splits': 5,
         'is_shuffle': True,
-        'is_shap': True,
+        'is_shap': False,
         'index_col': 'PassengerId'
     },
     'paths': {
@@ -130,7 +130,6 @@ config = {
                     'cv': 3,
                     'n_iter': 25,
                     'scoring': 'roc_auc',
-                    'n_jobs': -1,
                     'param_distributions': {
                         'max_features': {'type': 'uniform', 'a': 0.1, 'b': 0.8},
                         'min_samples_leaf': {'type': 'logint', 'a': 1, 'b': 30},
@@ -189,20 +188,20 @@ config = {
                     'tol': 0.001,
                     'validation_fraction': 0.2,
                     'n_iter_no_change': 25,
-                    'verbose': 10,
+                    'verbose': 50,
                     'random_state': '${general.seed}'
                 }
             },
         },
         'to_train': {
             'BaseLineLogisticRegression': True,
-            'LinearSVC': False,
-            'SVC': False,
-            'LogisticRegression': False,
+            'LinearSVC': True,
+            'SVC': True,
+            'LogisticRegression': True,
             'KNeighborsClassifier': True,
-            'GaussianNB': False,
-            'DecisionTreeClassifier': False,
-            'RandomForestClassifier': False,
+            'GaussianNB': True,
+            'DecisionTreeClassifier': True,
+            'RandomForestClassifier': True,
             'CatBoostClassifier': True,
             'DLM': True
         },

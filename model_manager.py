@@ -260,7 +260,6 @@ class ModelManager:
                 predictions = models['model_trainer'].predict_proba(X=X_transformed)
                 all_predictions[model_name] += predictions / len(fold_models)
 
-            all_predictions[model_name] = all_predictions[model_name]
         return all_predictions
 
 
